@@ -56,51 +56,55 @@
 
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn feed-network
-  ([input weights]
-    (feed-network input weights (list)))
-  ([input weights results]
-    (if (empty? weights)
-      results
-      (let [result (ml/layer-calculation (conj input '(1.0)) (first weights) @nn-activation-fn)]
-        (recur result (rest weights) (conj results (flatten result)))))))
+  ([network-input layer-weights activation-fn]
+    (println "F=======================================================================================")
+    (println "network-input    :" network-input)
+    (println "layer-weights    :" layer-weights)
+    (feed-network network-input layer-weights activation-fn (vector (flatten network-input))))
+  ([network-input layer-weights activation-fn layer-activations]
+    (println "----------------------------------------------------------------------------------------")
+    (println "network-input    :" (conj network-input [1.0]))
+    (println "layer-weights    :" (first layer-weights))
+    (println "layer-activations:" layer-activations)
+    (if (empty? layer-weights)
+      [network-input layer-activations]
+      (let [activation (flatten (ml/product (first layer-weights) (conj network-input [1.0])))
+            output (mapv activation-fn activation)]
+        (do
+          (println "=>activation     :" activation)
+          (println "=>output         :" output)
+          (recur (ml/matrix output) (rest layer-weights) activation-fn (conj layer-activations activation)))))))
 
 ;-----------------------------------------------------------------------------------------------------------------------
-(defn train-backwards [error outputs weights results]
-  (println "--- train-backwards --B")
-  (println "error" error)
-  (println "outputs" outputs)
-  (println "weights" weights)
+(defn train-backwards [error outputs weights activation-fn activation-fn-derivative results]
+  (println "T=======================================================================================")
+  (println "error            :" error)
+  (println "output           :" outputs)
+  (println "weights          :" weights)
+  (println "results          :" results)
   (if (empty? outputs)
     results
-    (let [weight (first weights)
-          output (first outputs)
+    (let [output (first outputs)
+          weight (first weights)
           hidden-error (ml/hidden-errors-calculation output error weight @nn-dactivation-fn)
           hidden-weight (ml/weights-calculation output hidden-error weight @nn-rate)
           rest-outputs (rest outputs)
           rest-weights (rest weights)]
       (do
-        (println "--- train-backwards --B")
-        (println "weights" weight)
-        (println "output" output)
-        (println "--- train-backwards --E")
-        (recur error rest-outputs rest-weights (conj results hidden-weight))))))
+        (recur error rest-outputs rest-weights activation-fn activation-fn-derivative (conj results hidden-weight))))))
 
-(defn train-network [input target weights]
-  (let [outputs (feed-network (ml/matrix input) weights)
-        weights-rev (reverse weights)
-        weight (first weights-rev)
-        output (first outputs)
-        output-error (ml/output-errors-calculation output target @nn-dactivation-fn)
+(defn train-network [network-input layer-weights target activation-fn activation-fn-derivative]
+  (let [[_ layer-activations] (feed-network (ml/matrix network-input) layer-weights activation-fn)
+        layer-weights (reverse layer-weights)
+        layer-activations (reverse layer-activations)
+        weight (first layer-weights)
+        output (first layer-activations)
+        output-error (ml/output-errors-calculation output target activation-fn-derivative)
         output-weight (ml/weights-calculation output output-error weight @nn-rate)
-        rest-outputs (rest outputs)
-        rest-weights (rest weights-rev)]
+        rest-outputs (rest layer-activations)
+        rest-weights (rest layer-weights)]
     (do
-      (println "--- train-network --B")
-      (println "outputs" outputs)
-      (println "error" output-error)
-      (println "weight" output-weight)
-      (println "--- train-network --E")
-      (train-backwards output-error rest-outputs rest-weights (list output-weight)))))
+      (train-backwards output-error rest-outputs rest-weights activation-fn activation-fn-derivative (vector output-weight)))))
 
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn reset-callback [[layers]]
@@ -123,54 +127,59 @@
 
 (defn feed-callback [[input target train]]
   (if train
-    (reset! nn-weights (train-network input target @nn-weights))
-    (reset! nn-outputs (feed-network (ml/matrix input) @nn-weights)))
+    (reset! nn-weights (train-network input @nn-weights target @nn-activation-fn @nn-dactivation-fn))
+    (reset! nn-outputs (feed-network (ml/matrix input) @nn-weights @nn-activation-fn)))
   (scada-set-output))
 
 ;-----------------------------------------------------------------------------------------------------------------------
-(def xor-data [{:i '(0 0) :t '(0)}
-               {:i '(0 1) :t '(1)}
-               {:i '(1 0) :t '(1)}
-               {:i '(1 1) :t '(0)}])
+(def xor-data [{:i [0 0] :t [0]}
+               {:i [0 1] :t [1]}
+               {:i [1 0] :t [1]}
+               {:i [1 1] :t [0]}])
 
 (defn xor-test []
-  (doall (map #(println (:i %) "=>" (feed-network (ml/matrix (:i %)) @nn-weights)) xor-data)))
+  (doall
+    (map
+      #(println (:i %) "=>" (feed-network (ml/matrix (:i %)) @nn-weights @nn-activation-fn))
+                xor-data)))
 
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn -main [& args]
-  (scada/startup args)
+  (comment
+    (scada/startup args)
 
-  (scada-get-weights)
-  (println "weights" @nn-weights)
+    (scada-get-weights)
+    (println "weights" @nn-weights)
 
-  (scada/dpConnect [:Network.Config.Layers] reset-callback)
-  (scada/dpConnect [:Network.Config.ActivationFn] set-activation-fn-callback true)
+    (scada/dpConnect [:Network.Config.Layers] reset-callback)
+    (scada/dpConnect [:Network.Config.ActivationFn] set-activation-fn-callback true)
 
-  (scada/dpConnect [:Network.Control.Rate] set-rate-callback true)
+    (scada/dpConnect [:Network.Control.Rate] set-rate-callback true)
 
-  (scada/dpConnect [:Network.Data.Input
-                    :Network.Data.Target
-                    :Network.Control.Train] feed-callback)
+    (scada/dpConnect [:Network.Data.Input
+                      :Network.Data.Target
+                      :Network.Control.Train] feed-callback)
 
-  (scada/dpConnect [:Network.Control.Save] save-network-callback)
+    (scada/dpConnect [:Network.Control.Save] save-network-callback)
+    )
 
 
-  (reset! nn-weights [[[5.986938319255103  -3.9050378273319755  -3.8927622364550345]
-                       [1.99893455091257   -5.049468802938935   -5.0079142506851575]]
-                      [[-7.04504038559793  14.718764645089621  -14.907682119185624]]])
+  ; already trained network for XOR
+  (reset! nn-weights [[[  -3.9050378273319755  -3.8927622364550345 5.986938319255103]
+                       [-5.049468802938935   -5.0079142506851575 1.99893455091257   ]]
+                      [[14.718764645089621  -14.907682119185624 -7.04504038559793  ]]])
 
-  ;(xor-test)
-
+  ; xor-test
   (init-network [2 2 1])
 
-  (dotimes [_ 10000]
-    (doseq [x xor-data]
-      (reset! nn-weights (train-network (:i x) (:t x) @nn-weights))))
+  ;(dotimes [_ 10000]
+  ;  (doseq [x xor-data]
+  ;    (reset! nn-weights (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn))))
 
-  ;(let [x (first xor-data)]
-  ;  (train-network (:i x) (:t x) @nn-weights))
+  (let [x (first xor-data)]
+    (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn))
 
-  @nn-weights
+  ;@nn-weights
 
   (xor-test)
 
