@@ -46,12 +46,12 @@
 
 (defn init-weight-matrix [x y]
   "create weight matrix inclusive n bias"
-  (map #(repeatedly % rand) (repeat y (+ 1 x))))
+  (mapv #(repeatedly % rand) (repeat y (+ 1 x))))
 
 (defn init-network [layers]
   (println "init-network" layers)
   (reset! nn-layers layers)
-  (reset! nn-weights (map init-weight-matrix layers (rest layers))))
+  (reset! nn-weights (mapv init-weight-matrix layers (rest layers))))
 
 
 ;-----------------------------------------------------------------------------------------------------------------------
@@ -63,9 +63,9 @@
     (feed-network network-input layer-weights activation-fn (vector (flatten network-input))))
   ([network-input layer-weights activation-fn layer-activations]
     (println "----------------------------------------------------------------------------------------")
-    (println "network-input    :" (conj network-input [1.0]))
-    (println "layer-weights    :" (first layer-weights))
+    (println "network-input    :" network-input)
     (println "layer-activations:" layer-activations)
+    (println "layer-weights    :" layer-weights)
     (if (empty? layer-weights)
       [network-input layer-activations]
       (let [activation (flatten (ml/product (first layer-weights) (conj network-input [1.0])))
@@ -76,35 +76,34 @@
           (recur (ml/matrix output) (rest layer-weights) activation-fn (conj layer-activations activation)))))))
 
 ;-----------------------------------------------------------------------------------------------------------------------
-(defn train-backwards [error outputs weights activation-fn activation-fn-derivative results]
-  (println "T=======================================================================================")
-  (println "error            :" error)
-  (println "output           :" outputs)
+(defn train-backwards [output-error activations weights activation-fn activation-fn-derivative output-weights]
+  (println "TB=======================================================================================")
+  (println "output-error     :" output-error)
+  (println "activations      :" activations)
   (println "weights          :" weights)
-  (println "results          :" results)
-  (if (empty? outputs)
-    results
-    (let [output (first outputs)
+  (println "output-weights   :" output-weights)
+  (if (empty? activations)
+    output-weights
+    (let [activation (conj (vec (first activations)) 1.0)
           weight (first weights)
-          hidden-error (ml/hidden-errors-calculation output error weight @nn-dactivation-fn)
-          hidden-weight (ml/weights-calculation output hidden-error weight @nn-rate)
-          rest-outputs (rest outputs)
+          hidden-error (ml/hidden-errors-calculation activation output-error weight @nn-dactivation-fn)
+          hidden-weight (ml/weights-calculation activation hidden-error weight @nn-rate)
+          rest-outputs (rest activations)
           rest-weights (rest weights)]
       (do
-        (recur error rest-outputs rest-weights activation-fn activation-fn-derivative (conj results hidden-weight))))))
+        (recur hidden-error rest-outputs rest-weights activation-fn activation-fn-derivative (conj output-weights hidden-weight))))))
 
 (defn train-network [network-input layer-weights target activation-fn activation-fn-derivative]
-  (let [[_ layer-activations] (feed-network (ml/matrix network-input) layer-weights activation-fn)
-        layer-weights (reverse layer-weights)
-        layer-activations (reverse layer-activations)
-        weight (first layer-weights)
-        output (first layer-activations)
-        output-error (ml/output-errors-calculation output target activation-fn-derivative)
-        output-weight (ml/weights-calculation output output-error weight @nn-rate)
-        rest-outputs (rest layer-activations)
-        rest-weights (rest layer-weights)]
+  (let [[network-output layer-activations] (feed-network (ml/matrix network-input) layer-weights activation-fn)
+        prediction-error (mapv - (flatten target) (flatten network-output))
+        inner-activations (reverse (rest layer-activations))
+        layer-weights (reverse layer-weights)]
     (do
-      (train-backwards output-error rest-outputs rest-weights activation-fn activation-fn-derivative (vector output-weight)))))
+      (println "TN=======================================================================================")
+      (println "prediction-error  :" prediction-error)
+      (println "inner-activations :" inner-activations)
+      (println "layer-weights     :" layer-weights))))
+
 
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn reset-callback [[layers]]
@@ -170,7 +169,7 @@
                       [[14.718764645089621  -14.907682119185624 -7.04504038559793  ]]])
 
   ; xor-test
-  (init-network [2 2 1])
+  ;(init-network [2 2 1])
 
   ;(dotimes [_ 10000]
   ;  (doseq [x xor-data]
@@ -181,7 +180,7 @@
 
   ;@nn-weights
 
-  (xor-test)
+  ;(xor-test)
 
   (println "ready")
 )
