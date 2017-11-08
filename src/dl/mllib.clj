@@ -6,6 +6,7 @@
   (mapv #(vector %) xs))
 
 (defn transpose [matrix]
+  (println "TRANSPOSE" matrix)
   (apply mapv vector matrix))
 
 (defn product [a b]

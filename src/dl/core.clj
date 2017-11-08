@@ -93,17 +93,35 @@
       (do
         (recur hidden-error rest-outputs rest-weights activation-fn activation-fn-derivative (conj output-weights hidden-weight))))))
 
-(defn train-network [network-input layer-weights target activation-fn activation-fn-derivative]
+
+(defn train-network [network-input layer-weights target activation-fn dactivation-fn]
   (let [[network-output layer-activations] (feed-network (ml/matrix network-input) layer-weights activation-fn)
         prediction-error (mapv - (flatten target) (flatten network-output))
-        inner-activations (reverse (rest layer-activations))
+        inner-activations (rest (reverse layer-activations))
         layer-weights (reverse layer-weights)]
-    (do
-      (println "TN=======================================================================================")
-      (println "prediction-error  :" prediction-error)
-      (println "inner-activations :" inner-activations)
-      (println "layer-weights     :" layer-weights))))
-
+    (loop [activations inner-activations
+           delta (ml/matrix prediction-error)
+           weights layer-weights
+           result-gradients []]
+      (if (empty? activations)
+        result-gradients
+        (let [[activation & next-activations] activations
+              [weight & next-weights] weights
+              activation-with-bias (conj (vec activation) 1.0)
+              gradients (ml/product delta [activation-with-bias])
+              next-delta (mapv *
+                               (mapv dactivation-fn activation)
+                               (flatten (ml/product (ml/transpose delta) weight)))]
+          (do
+            (println "----------------------------------------------------------------------------------------")
+            (println "activation     :" activation)
+            (println "weight         :" weight)
+            (println "next-weights   :" next-weights)
+            (println "delta          :" delta)
+            (println "next-delta     :" next-delta)
+            (println "next-activation:" next-activations)
+            (println "gradients      :" gradients)
+            (recur next-activations (ml/matrix next-delta) next-weights (conj result-gradients gradients))))))))
 
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn reset-callback [[layers]]
@@ -176,7 +194,7 @@
   ;    (reset! nn-weights (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn))))
 
   (let [x (first xor-data)]
-    (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn))
+    (println "gradients: " (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn)))
 
   ;@nn-weights
 
