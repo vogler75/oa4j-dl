@@ -18,35 +18,58 @@
   ;(let [nested-for (fn [f x y] (mapv (fn [a] (mapv (fn [b] (f a b)) y)) x))]
   ;  (nested-for (fn [x y] (reduce + (mapv * x y))) a (transpose b))))
 
-(defn output-errors-calculation [outputs targets]
-  "calculate the errors for the output layer (target value - actual value)"
-  ; outputs [[0.02] [0.027]]
-  ; targets [0 1]
-  (let [outputs (flatten outputs) targets (flatten targets)]
-    (mapv - targets outputs)))
+(defn init-weight-matrix [x y]
+  "create weight matrix inclusive n bias"
+  (mapv #(repeatedly % rand) (repeat y (+ 1 x))))
 
-(defn hidden-errors-calculation [activations errors weights dactivation-fn]
-  "calculate errors for the hidden layer based on the output-errors and weights"
-  ; activations [
-  ; errors [0.8 0.5]
-  ; weights [[0.15 0.02 0.01] [0.16 0.03 0.02]]
-  (println "{-- hidden-errors-calculation ---")
-  (println "activations =" activations)
-  (println "errors      =" errors)
-  (println "weights     =" weights)
-  (println "--- hidden-errors-calculation --}")
-  (let [activations (flatten activations)]
-    (mapv *
-         (mapv dactivation-fn activations)
-         (flatten (product (matrix errors) (transpose weights))))))
+;-----------------------------------------------------------------------------------------------------------------------
+(defn feed-network
+  ([network-input layer-weights activation-fn]
+    ;(println "F=======================================================================================")
+    ;(println "network-input    :" network-input)
+    ;(println "layer-weights    :" layer-weights)
+   (feed-network network-input layer-weights activation-fn (list (flatten network-input))))
+  ([network-input layer-weights activation-fn layer-activations]
+    ;(println "----------------------------------------------------------------------------------------")
+    ;(println "network-input    :" network-input)
+    ;(println "layer-activations:" layer-activations)
+    ;(println "layer-weights    :" layer-weights)
+   (if (empty? layer-weights)
+     [network-input layer-activations] ; network-input => network-output!
+     (let [activation (flatten (product (first layer-weights) (conj network-input [1.0])))
+           output (map activation-fn activation)]
+       (do
+         ;(println "=>activation     :" activation)
+         ;(println "=>output         :" output)
+         (recur (matrix output) (rest layer-weights) activation-fn (conj layer-activations activation)))))))
 
-(defn weights-calculation [activations errors weights rate]
-  "update/adjust the weights of a hidden layer according to the errors"
-  ; activations [[0.02] [0.02]]
-  ; errors [0.8 0.5]
-  ; weights [[0.15 0.02 0.01] [0.16 0.03 0.02]] e.g. 3 neurons follow
-  (let [layer-gradients (mapv * errors (flatten activations))] ; (0.018520152042568426 0.013804030750041782)
-    (mapv
-      (fn [ws g]
-        (mapv (fn [w] (+ w (* g rate))) ws))
-      weights layer-gradients)))
+(defn train-network [network-input layer-weights target rate activation-fn dactivation-fn]
+  (let [[network-output layer-activations] (feed-network (matrix network-input) layer-weights activation-fn)
+        prediction-error (map - (flatten target) (flatten network-output))
+        inner-activations (rest layer-activations)
+        layer-weights (reverse layer-weights)]
+    (loop [activations inner-activations
+           delta (matrix prediction-error)
+           weights layer-weights
+           result-gradients []]
+      (if (empty? activations)
+        (reverse
+          (map (fn [w1 g1] (map (fn [w2 g2] (map (fn [w g] (+ w (* g rate))) w2 g2)) w1 g1))
+               layer-weights result-gradients))
+        (let [[activation & next-activations] activations
+              [weight & next-weights] weights
+              activation-with-bias (conj (map activation-fn activation) 1.0)
+              gradients (product delta [activation-with-bias])
+              weight-without-bias (transpose (rest (transpose weight)))
+              next-delta (map * (map dactivation-fn activation)
+                              (flatten (product (transpose delta) weight-without-bias)))]
+          (do
+            ;(println "T=======================================================================================")
+            ;(println "activation     :" activation)
+            ;(println "weight         :" weight)
+            ;(println "next-weights   :" next-weights)
+            ;(println "delta          :" delta)
+            ;(println "next-delta     :" next-delta)
+            ;(println "next-activation:" next-activations)
+            ;(println "gradients      :" gradients)
+            (recur next-activations (matrix next-delta) next-weights (conj result-gradients gradients))))))))
