@@ -57,70 +57,53 @@
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn feed-network
   ([network-input layer-weights activation-fn]
-    (println "F=======================================================================================")
-    (println "network-input    :" network-input)
-    (println "layer-weights    :" layer-weights)
-    (feed-network network-input layer-weights activation-fn (vector (flatten network-input))))
+    ;(println "F=======================================================================================")
+    ;(println "network-input    :" network-input)
+    ;(println "layer-weights    :" layer-weights)
+    (feed-network network-input layer-weights activation-fn (list (flatten network-input))))
   ([network-input layer-weights activation-fn layer-activations]
-    (println "----------------------------------------------------------------------------------------")
-    (println "network-input    :" network-input)
-    (println "layer-activations:" layer-activations)
-    (println "layer-weights    :" layer-weights)
+    ;(println "----------------------------------------------------------------------------------------")
+    ;(println "network-input    :" network-input)
+    ;(println "layer-activations:" layer-activations)
+    ;(println "layer-weights    :" layer-weights)
     (if (empty? layer-weights)
-      [network-input layer-activations]
+      [network-input layer-activations] ; network-input => network-output!
       (let [activation (flatten (ml/product (first layer-weights) (conj network-input [1.0])))
-            output (mapv activation-fn activation)]
+            output (map activation-fn activation)]
         (do
-          (println "=>activation     :" activation)
-          (println "=>output         :" output)
+          ;(println "=>activation     :" activation)
+          ;(println "=>output         :" output)
           (recur (ml/matrix output) (rest layer-weights) activation-fn (conj layer-activations activation)))))))
 
-;-----------------------------------------------------------------------------------------------------------------------
-(defn train-backwards [output-error activations weights activation-fn activation-fn-derivative output-weights]
-  (println "TB=======================================================================================")
-  (println "output-error     :" output-error)
-  (println "activations      :" activations)
-  (println "weights          :" weights)
-  (println "output-weights   :" output-weights)
-  (if (empty? activations)
-    output-weights
-    (let [activation (conj (vec (first activations)) 1.0)
-          weight (first weights)
-          hidden-error (ml/hidden-errors-calculation activation output-error weight @nn-dactivation-fn)
-          hidden-weight (ml/weights-calculation activation hidden-error weight @nn-rate)
-          rest-outputs (rest activations)
-          rest-weights (rest weights)]
-      (do
-        (recur hidden-error rest-outputs rest-weights activation-fn activation-fn-derivative (conj output-weights hidden-weight))))))
-
-
-(defn train-network [network-input layer-weights target activation-fn dactivation-fn]
+(defn train-network [network-input layer-weights target rate activation-fn dactivation-fn]
   (let [[network-output layer-activations] (feed-network (ml/matrix network-input) layer-weights activation-fn)
-        prediction-error (mapv - (flatten target) (flatten network-output))
-        inner-activations (rest (reverse layer-activations))
+        prediction-error (map - (flatten target) (flatten network-output))
+        inner-activations (rest layer-activations)
         layer-weights (reverse layer-weights)]
     (loop [activations inner-activations
            delta (ml/matrix prediction-error)
            weights layer-weights
            result-gradients []]
       (if (empty? activations)
-        result-gradients
+        (reverse
+          (map (fn [w1 g1] (map (fn [w2 g2] (map (fn [w g] (+ w (* g rate))) w2 g2)) w1 g1))
+            layer-weights result-gradients))
         (let [[activation & next-activations] activations
               [weight & next-weights] weights
-              activation-with-bias (conj (vec activation) 1.0)
+              activation-with-bias (conj (map activation-fn activation) 1.0)
               gradients (ml/product delta [activation-with-bias])
-              next-delta (mapv *
-                               (mapv dactivation-fn activation)
-                               (flatten (ml/product (ml/transpose delta) weight)))]
+              weight-without-bias (ml/transpose (rest (ml/transpose weight)))
+              next-delta (map * (map dactivation-fn activation)
+                                (flatten (ml/product (ml/transpose delta) weight-without-bias)))]
           (do
-            (println "----------------------------------------------------------------------------------------")
-            (println "activation     :" activation)
-            (println "weight         :" weight)
-            (println "next-weights   :" next-weights)
-            (println "delta          :" delta)
-            (println "next-delta     :" next-delta)
-            (println "next-activation:" next-activations)
-            (println "gradients      :" gradients)
+            ;(println "T=======================================================================================")
+            ;(println "activation     :" activation)
+            ;(println "weight         :" weight)
+            ;(println "next-weights   :" next-weights)
+            ;(println "delta          :" delta)
+            ;(println "next-delta     :" next-delta)
+            ;(println "next-activation:" next-activations)
+            ;(println "gradients      :" gradients)
             (recur next-activations (ml/matrix next-delta) next-weights (conj result-gradients gradients))))))))
 
 ;-----------------------------------------------------------------------------------------------------------------------
@@ -144,7 +127,7 @@
 
 (defn feed-callback [[input target train]]
   (if train
-    (reset! nn-weights (train-network input @nn-weights target @nn-activation-fn @nn-dactivation-fn))
+    (reset! nn-weights (train-network input @nn-weights target @nn-rate @nn-activation-fn @nn-dactivation-fn))
     (reset! nn-outputs (feed-network (ml/matrix input) @nn-weights @nn-activation-fn)))
   (scada-set-output))
 
@@ -180,31 +163,26 @@
     (scada/dpConnect [:Network.Control.Save] save-network-callback)
     )
 
-
-  ; already trained network for XOR
-  (reset! nn-weights [[[  -3.9050378273319755  -3.8927622364550345 5.986938319255103]
-                       [-5.049468802938935   -5.0079142506851575 1.99893455091257   ]]
-                      [[14.718764645089621  -14.907682119185624 -7.04504038559793  ]]])
-
   ; xor-test
-  ;(init-network [2 2 1])
-
-  ;(dotimes [_ 10000]
-  ;  (doseq [x xor-data]
-  ;    (reset! nn-weights (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn))))
-
-  (let [x (first xor-data)
-        g (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn)]
-    (do
-      (println "********************************************************************************************")
-      (println "gradients: " g)))
-
-  (println "********************************************************************************************")
-  (println "learned network:" @nn-weights)
-  (println "********************************************************************************************")
-
+  (init-network [2 2 1])
+  (println "inital network: " @nn-weights)
+  (dotimes [_ 20000]
+    (doseq [x xor-data]
+      (reset! nn-weights (train-network (:i x) @nn-weights (:t x) 0.1 @nn-activation-fn @nn-dactivation-fn))))
 
   (xor-test)
+
+  ; already trained network for XOR, just to compare the output with another NN program
+  (comment
+    (reset! nn-weights '((( 5.986938319255103 -3.9050378273319755  -3.8927622364550345 )
+                           (1.99893455091257 -5.049468802938935   -5.0079142506851575   ))
+                          ((-7.04504038559793 14.718764645089621  -14.907682119185624   ))))
+    (println "inital network: " @nn-weights)
+    (let [x (first xor-data)
+          n (train-network (:i x) @nn-weights (:t x) 0.1 @nn-activation-fn @nn-dactivation-fn)]
+      (println "trained network: " n))
+    )
+
 
   (println "ready")
 )
