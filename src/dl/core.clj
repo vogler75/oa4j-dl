@@ -193,12 +193,18 @@
   ;  (doseq [x xor-data]
   ;    (reset! nn-weights (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn))))
 
-  (let [x (first xor-data)]
-    (println "gradients: " (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn)))
+  (let [x (first xor-data)
+        g (train-network (:i x) @nn-weights (:t x) @nn-activation-fn @nn-dactivation-fn)]
+    (do
+      (println "********************************************************************************************")
+      (println "gradients: " g)))
 
-  ;@nn-weights
+  (println "********************************************************************************************")
+  (println "learned network:" @nn-weights)
+  (println "********************************************************************************************")
 
-  ;(xor-test)
+
+  (xor-test)
 
   (println "ready")
 )
