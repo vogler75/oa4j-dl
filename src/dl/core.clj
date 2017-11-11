@@ -30,7 +30,7 @@
   (scada/dpSet :Network.Network.Weights (json/write-str @nn-weights)))
 
 (defn scada-set-output []
-  (scada/dpSet :Network.Data.Output (DynVar. (to-array (first @nn-outputs)))))
+  (scada/dpSet :Network.Data.Output (DynVar. (to-array (flatten @nn-outputs)))))
 
 ;-----------------------------------------------------------------------------------------------------------------------
 ; layers [2 3 2]
@@ -47,9 +47,8 @@
 (defn init-network [layers]
   (println "init-network" layers)
   (reset! nn-layers layers)
-  (reset! nn-weights (mapv ml/init-weight-matrix layers (rest layers))))
+  (reset! nn-weights (map ml/init-weight-matrix layers (rest layers))))
 
-;-----------------------------------------------------------------------------------------------------------------------
 (defn reset-callback [[layers]]
   (init-network layers))
 
@@ -70,8 +69,13 @@
 
 (defn feed-callback [[input target train]]
   (if train
-    (reset! nn-weights (ml/train-network input @nn-weights target @nn-rate @nn-activation-fn @nn-dactivation-fn))
-    (reset! nn-outputs (ml/feed-network (ml/matrix input) @nn-weights @nn-activation-fn)))
+    (dotimes [_ 10]
+      (let [[outputs weights] (ml/train-network input @nn-weights target @nn-rate @nn-activation-fn @nn-dactivation-fn)]
+        (do
+          (reset! nn-outputs outputs)
+          (reset! nn-weights weights)))))
+    (let [[outputs activations] (ml/feed-network (ml/matrix input) @nn-weights @nn-activation-fn)]
+      (reset! nn-outputs outputs))
   (scada-set-output))
 
 ;-----------------------------------------------------------------------------------------------------------------------
@@ -88,41 +92,41 @@
 
 ;-----------------------------------------------------------------------------------------------------------------------
 (defn -main [& args]
-  (comment
-    (scada/startup args)
+  (scada/startup args)
 
-    (scada-get-weights)
-    (println "weights" @nn-weights)
+  (scada-get-weights)
 
-    (scada/dpConnect [:Network.Config.Layers] reset-callback)
-    (scada/dpConnect [:Network.Config.ActivationFn] set-activation-fn-callback true)
+  (scada/dpConnect [:Network.Config.Layers] reset-callback)
+  (scada/dpConnect [:Network.Config.ActivationFn] set-activation-fn-callback true)
 
-    (scada/dpConnect [:Network.Control.Rate] set-rate-callback true)
+  (scada/dpConnect [:Network.Control.Rate] set-rate-callback true)
 
-    (scada/dpConnect [:Network.Data.Input
-                      :Network.Data.Target
-                      :Network.Control.Train] feed-callback)
+  (scada/dpConnect [:Network.Data.Input
+                    :Network.Data.Target
+                    :Network.Control.Train] feed-callback)
 
-    (scada/dpConnect [:Network.Control.Save] save-network-callback)
-    )
+  (scada/dpConnect [:Network.Control.Save] save-network-callback)
 
   ; xor-test
-  (init-network [2 2 1])
-  (println "inital network: " @nn-weights)
-  (dotimes [_ 20000]
-    (doseq [x xor-data]
-      (reset! nn-weights (ml/train-network (:i x) @nn-weights (:t x) 0.1 @nn-activation-fn @nn-dactivation-fn))))
+  (comment
+    (init-network [2 2 1])
+    (println "inital network: " @nn-weights)
+    (dotimes [_ 20000]
+      (doseq [x xor-data]
+        (let [[o n] (ml/train-network (:i x) @nn-weights (:t x) 0.1 @nn-activation-fn @nn-dactivation-fn)]
+          (reset! nn-weights n))))
 
-  (xor-test)
+    (xor-test)
 
-  ; already trained network for XOR, just to compare the output with another NN program
-  (reset! nn-weights '((( 5.986938319255103 -3.9050378273319755  -3.8927622364550345 )
-                         (1.99893455091257 -5.049468802938935   -5.0079142506851575   ))
-                        ((-7.04504038559793 14.718764645089621  -14.907682119185624   ))))
-  (println "inital network: " @nn-weights)
-  (let [x (first xor-data)
-        n (ml/train-network (:i x) @nn-weights (:t x) 0.1 @nn-activation-fn @nn-dactivation-fn)]
-    (println "trained network: " n))
+    ; already trained network for XOR, just to compare the output with another NN program
+    (reset! nn-weights '(((5.986938319255103 -3.9050378273319755 -3.8927622364550345)
+                           (1.99893455091257 -5.049468802938935 -5.0079142506851575))
+                          ((-7.04504038559793 14.718764645089621 -14.907682119185624))))
+    (println "inital network: " @nn-weights)
+    (let [x (first xor-data)
+          [o n] (ml/train-network (:i x) @nn-weights (:t x) 0.1 @nn-activation-fn @nn-dactivation-fn)]
+      (println "trained network: " n))
+    )
 
   (println "ready")
 )

@@ -3,7 +3,8 @@
 ;------------------------------------------------------------------------------------------
 (defn matrix [xs]
   "create a matrix from an array [1 2 3] => [[1] [2] [3]]"
-  (map #(list %) xs))
+  (partition 1 xs))
+  ;(map #(list %) xs))
   ;(mapv #(vector %) xs))
 
 (defn transpose [matrix]
@@ -53,14 +54,14 @@
            weights layer-weights
            result-gradients []]
       (if (empty? activations)
-        (reverse
-          (map (fn [w1 g1] (map (fn [w2 g2] (map (fn [w g] (+ w (* g rate))) w2 g2)) w1 g1))
-               layer-weights result-gradients))
+        [network-output (reverse
+          (map (fn [a b] (map (fn [a b] (map (fn [a b] (+ a (* b rate))) a b)) a b))
+               layer-weights result-gradients))]
         (let [[activation & next-activations] activations
               [weight & next-weights] weights
               activation-with-bias (conj (map activation-fn activation) 1.0)
               gradients (product delta [activation-with-bias])
-              weight-without-bias (transpose (rest (transpose weight)))
+              weight-without-bias (map (fn [xs] (rest xs)) weight)
               next-delta (map * (map dactivation-fn activation)
                               (flatten (product (transpose delta) weight-without-bias)))]
           (do
